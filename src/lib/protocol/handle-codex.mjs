@@ -58,6 +58,7 @@ import {
   waitForOpenAICapacity,
   wakeOpenAIWaiter,
 } from '../pool/openai-account-runtime.mjs'
+import { reportCodexAuthFailure, reportCodexAuthSuccess } from '../pool/codex-auth-breaker.mjs'
 import { CLIENT_POOL_BUSY_MESSAGE, CLIENT_POOL_UNAVAILABLE_MESSAGE, ErrorCode } from '../core/errors.mjs'
 import { applyOpenaiWashLog } from './openai-wash.mjs'
 import { canonicalImageToolModel, imageGenerationTools } from './image-tool-models.mjs'
@@ -935,6 +936,7 @@ export async function handleCodexProtocol({
           logBag.cache_read_tokens = logged?.cache_read_input_tokens ?? logged?.cache_read_tokens ?? null
           logBag.cache_creation_tokens = logged?.cache_creation_input_tokens ?? logged?.cache_creation_tokens ?? null
           reportOpenAIAttempt(vm.id, 'succeeded', result.ttftMs ?? null)
+          reportCodexAuthSuccess(vm.id)
           logBag.final_state = result?.ok ? result.terminalState || 'verified' : 'verified'
           logBag.upstream_model = converted.body.model
           if (hops > 1) logBag.codex_failed_over = true
@@ -968,7 +970,11 @@ export async function handleCodexProtocol({
         }
         reportOpenAIAttempt(vm.id, attemptKind, result?.ttftMs ?? null)
         const failureHold = codexFailureHold(result)
-        if (failureHold) holdOpenAIAccount(vm.id, failureHold)
+        if (failureHold) {
+          holdOpenAIAccount(vm.id, failureHold)
+          // GAIR-NLP auth breaker: oauth_401 计入熔断（闭源 kernel 在死号上空转重连，必须杀进程收口）
+          if (failureHold.reason === 'oauth_401') reportCodexAuthFailure(vm.id)
+        }
         if (res.headersSent || hopEmitted) {
           stats.errors++
           logBag.error_code = result?.body?.error?.code || 'codex_upstream'

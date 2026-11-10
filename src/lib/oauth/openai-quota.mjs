@@ -4,6 +4,7 @@
  * without auto-reset, spark shadow, or agent-identity recovery.
  */
 import crypto from 'node:crypto'
+import { reportCodexAuthFailure, reportCodexAuthSuccess } from '../pool/codex-auth-breaker.mjs'
 import { getVm, syncCodexQuotaSchedule } from '../vm/vm-registry.mjs'
 import { isCodexVm } from '../vm/vm-kind.mjs'
 import { isLocalEgressProxy } from '../vm/egress.mjs'
@@ -355,6 +356,11 @@ async function queryUpstream(slot, { fetchImpl, rotate = true, projectRoot, vmId
   if (pack.error === 'upstream_auth' && rotate && current.refresh) {
     current = await rotateIfNeeded(current, projectRoot, vmId, fetchImpl)
     if (!current.access || current.rotateError) {
+      // GAIR-NLP auth breaker：refresh 被端点拒绝（refresh_rejected=RT 死）立即熔断；其余计入窗口计数
+      reportCodexAuthFailure(vmId, {
+        terminal: current.rotateError === 'refresh_rejected',
+        reason: current.rotateError || 'refresh_failed',
+      })
       return fail(current.rotateError || 'refresh_failed', 'GPT OAuth 刷新失败，请重新导入', 502)
     }
     pack = await run(current.access)
@@ -365,6 +371,7 @@ async function queryUpstream(slot, { fetchImpl, rotate = true, projectRoot, vmId
     })
   }
   if (pack.ok === false || pack.error) return pack
+  reportCodexAuthSuccess(vmId)
 
   const extra = extraFromRateLimit(pack.usage.payload?.rate_limit || pack.usage.payload?.rateLimit || {})
   const usageCredits = pack.usage.payload?.rate_limit_reset_credits || pack.usage.payload?.rateLimitResetCredits
