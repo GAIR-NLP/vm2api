@@ -26,8 +26,8 @@ test('strips client identity fields', () => {
   assert.equal(out.model, 'gpt-5.4')
   assert.equal(out.client_metadata, undefined)
   assert.equal(out.base_url, undefined)
-  assert.equal(out.metadata.user_id, undefined)
-  assert.equal(out.metadata.topic, 'keep')
+  // GAIR-NLP: whole metadata key is stripped (upstream rejects any metadata param)
+  assert.equal(out.metadata, undefined)
 })
 
 test('chat tool turns become function_call items', () => {

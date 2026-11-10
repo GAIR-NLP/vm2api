@@ -20,13 +20,10 @@ export function stripCodexIdentity(body = {}) {
   if (!body || typeof body !== 'object') return {}
   const next = { ...body }
   for (const key of IDENTITY_KEYS) delete next[key]
-  if (next.metadata && typeof next.metadata === 'object') {
-    const metadata = { ...next.metadata }
-    delete metadata.user_id
-    delete metadata.device_id
-    delete metadata.installation_id
-    next.metadata = metadata
-  }
+  // GAIR-NLP (carried from 2026-10-12 host patch): ChatGPT codex backend rejects
+  // any 'metadata' param (Unsupported parameter: metadata). Callers (litellm/sub2api)
+  // stamp ginit_* bookkeeping into metadata — strip the whole key.
+  delete next.metadata
   return next
 }
 
